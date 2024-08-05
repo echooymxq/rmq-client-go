@@ -201,8 +201,23 @@ func (m *MockNamesrvs) FetchClusterList(topic string) ([]string, error) {
 	return ret0, ret1
 }
 
+// QueryTopicRouteInfo mocks base method
+func (m *MockNamesrvs) QueryTopicRouteInfo(topic string) (*TopicRouteData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueryTopicRouteInfo", topic)
+	ret0, _ := ret[0].(*TopicRouteData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
 // FetchClusterList indicates an expected call of FetchClusterList
 func (mr *MockNamesrvsMockRecorder) FetchClusterList(topic interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchClusterList", reflect.TypeOf((*MockNamesrvs)(nil).FetchClusterList), topic)
+}
+
+// QueryTopicRouteInfo indicates an expected call of QueryTopicRouteInfo
+func (mr *MockNamesrvsMockRecorder) QueryTopicRouteInfo(topic interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueryTopicRouteInfo", reflect.TypeOf((*MockNamesrvs)(nil).QueryTopicRouteInfo), topic)
 }

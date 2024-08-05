@@ -65,6 +65,8 @@ type Namesrvs interface {
 	FetchClusterList(topic string) ([]string, error)
 
 	AddrList() []string
+
+	QueryTopicRouteInfo(topic string) (*TopicRouteData, error)
 }
 
 // namesrvs rocketmq namesrv instance.
