@@ -687,3 +687,17 @@ func (request *GetConsumerConnectionListHeader) Encode() map[string]string {
 		"consumerGroup": request.ConsumerGroup,
 	}
 }
+
+type GetConsumerRunningInfoRequestHeader struct {
+	ConsumerGroup string
+	ClientId      string
+	JstackEnable  bool
+}
+
+func (request *GetConsumerRunningInfoRequestHeader) Encode() map[string]string {
+	return map[string]string{
+		"consumerGroup": request.ConsumerGroup,
+		"clientId":      request.ClientId,
+		"jstackEnable":  strconv.FormatBool(request.JstackEnable),
+	}
+}

@@ -57,6 +57,7 @@ type Admin interface {
 	ExamineTopicConsumeStats(group, topic string) (*ConsumeStats, error)
 	ExamineConsumerConnectionInfo(group string) (*ConsumerConnection, error)
 	ExamineBrokerConsumerConnectionInfo(addr, group string) (*ConsumerConnection, error)
+	GetConsumerRunningInfo(group, clientId string, jstack bool) (*ConsumerRunningInfo, error)
 	Close() error
 }
 
@@ -603,6 +604,35 @@ func (a *admin) selectBrokerAddr(brokerDataList []*internal.BrokerData) string {
 	brokerData := brokerDataList[rand.Intn(len(brokerDataList))]
 	addr := brokerData.BrokerAddresses[internal.MasterId]
 	return addr
+}
+
+func (a *admin) GetConsumerRunningInfo(group, clientId string, jstack bool) (*ConsumerRunningInfo, error) {
+	retryTopic := internal.GetRetryTopic(group)
+	println(retryTopic)
+	topicRouteData, err := a.ExamineTopicRouteInfo(context.Background(), retryTopic)
+
+	request := &internal.GetConsumerRunningInfoRequestHeader{
+		ConsumerGroup: group,
+		ClientId:      clientId,
+		JstackEnable:  jstack,
+	}
+	cmd := remote.NewRemotingCommand(internal.ReqGetConsumerRunningInfo, request, nil)
+
+	for _, brokerData := range topicRouteData.BrokerDataList {
+		addr := brokerData.BrokerAddresses[internal.MasterId]
+		println(addr)
+		res, err := a.cli.InvokeSync(context.Background(), addr, cmd, 5*time.Second)
+		if err == nil {
+			if res.Code == internal.ResSuccess {
+				var consumerRunningInfo ConsumerRunningInfo
+				err = consumerRunningInfo.Decode(string(res.Body))
+				return &consumerRunningInfo, err
+			} else {
+				err = fmt.Errorf("get consumer runninginfo error: CODE:%d, Remark:%s", res.Code, res.Remark)
+			}
+		}
+	}
+	return nil, err
 }
 
 func (a *admin) Close() error {

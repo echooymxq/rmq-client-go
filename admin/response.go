@@ -245,3 +245,44 @@ type Connection struct {
 	Language   string
 	Version    int64
 }
+
+type ConsumerRunningInfo struct {
+	Properties       map[string]string
+	SubscriptionData []*internal.SubscriptionData `json:""`
+	MQTable          map[primitive.MessageQueue]internal.ProcessQueueInfo
+	StatusTable      map[string]internal.ConsumeStatus
+	Jstack           string
+	RemotingSerializable
+}
+
+func (consumerRunningInfo *ConsumerRunningInfo) Decode(data string) error {
+	println(data)
+	mqTable := make(map[primitive.MessageQueue]internal.ProcessQueueInfo)
+	res := gjson.Parse(data)
+
+	mqTableStr := res.Get("mqTable").String()
+	trimStr := mqTableStr[2 : len(mqTableStr)-1]
+
+	split := strings.Split(trimStr, ",{")
+
+	var err error
+	for _, v := range split {
+		tuple := strings.Split(v, "}:")
+
+		queueStr := "{" + tuple[0] + "}"
+
+		var queue primitive.MessageQueue
+		err = json.Unmarshal([]byte(queueStr), &queue)
+		var processQueueInfo internal.ProcessQueueInfo
+		err = json.Unmarshal([]byte(tuple[1]), &processQueueInfo)
+
+		mqTable[queue] = processQueueInfo
+	}
+	consumerRunningInfo.MQTable = mqTable
+	consumerRunningInfo.Jstack = res.Get("jstack").String()
+
+	err = json.Unmarshal([]byte(res.Get("properties").String()), &consumerRunningInfo.Properties)
+	err = json.Unmarshal([]byte(res.Get("subscriptionSet").String()), &consumerRunningInfo.SubscriptionData)
+	err = json.Unmarshal([]byte(res.Get("statusTable").String()), &consumerRunningInfo.StatusTable)
+	return err
+}
