@@ -509,7 +509,13 @@ func (a *admin) queryMessage(ctx context.Context, topic, key string, maxNum int,
 
 		switch res.Code {
 		case internal.ResSuccess:
-			msgs = append(msgs, primitive.DecodeMessage(res.Body)...)
+			brokerMsgs := primitive.DecodeMessage(res.Body)
+			for _, msg := range brokerMsgs {
+				if msg.Queue != nil {
+					msg.Queue.BrokerName = brokerData.BrokerName
+				}
+			}
+			msgs = append(msgs, brokerMsgs...)
 		case internal.ResQueryNotFound:
 			continue
 		default:
