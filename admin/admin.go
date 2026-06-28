@@ -22,11 +22,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/pkg/errors"
 	"math/rand"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/apache/rocketmq-client-go/v2/internal"
 	"github.com/apache/rocketmq-client-go/v2/internal/remote"
@@ -48,7 +49,9 @@ type Admin interface {
 	ExamineTopicConfig(ctx context.Context, addr string, topic string) (*TopicConfig, error)
 	ExamineBrokerClusterInfo() (*ClusterInfo, error)
 	CreateSubscriptionGroup(ctx context.Context, opts ...OptionSubscriptionCreate) error
+	DeleteSubscriptionGroup(ctx context.Context, brokerAddr, group string, cleanOffset bool) error
 	ViewMessage(offsetMsgId string) (*primitive.MessageExt, error)
+	QueryMessageByUniqKey(topic, uniqKey string) (*primitive.MessageExt, error)
 	GetBrokerConfig(addr string) (map[string]string, error)
 	UpdateBrokerConfig(addr, configKey, configValue string) error
 	GetNamesrvConfig(addr string) (map[string]string, error)
@@ -110,6 +113,12 @@ type admin struct {
 
 	closeOnce sync.Once
 }
+
+const (
+	defaultQueryMessageMaxNum = 32
+	queryMessageMinTimestamp  = int64(0)
+	queryMessageMaxTimestamp  = int64(1<<63 - 1)
+)
 
 // NewAdmin initialize admin
 func NewAdmin(opts ...AdminOption) (*admin, error) {
@@ -402,6 +411,22 @@ func (a *admin) CreateSubscriptionGroup(ctx context.Context, opts ...OptionSubsc
 	return err
 }
 
+func (a *admin) DeleteSubscriptionGroup(ctx context.Context, brokerAddr, group string, cleanOffset bool) error {
+	request := &internal.DeleteSubscriptionGroupRequestHeader{
+		GroupName:   group,
+		CleanOffset: cleanOffset,
+	}
+	cmd := remote.NewRemotingCommand(internal.ReqDeleteSubscriptionGroup, request, nil)
+	response, err := a.cli.InvokeSync(ctx, brokerAddr, cmd, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	if response.Code != internal.ResSuccess {
+		return fmt.Errorf("delete subscription group response code: %d, remarks: %s", response.Code, response.Remark)
+	}
+	return nil
+}
+
 func (a *admin) ViewMessage(offsetMsgId string) (*primitive.MessageExt, error) {
 	messageID, err := primitive.UnmarshalMsgID([]byte(offsetMsgId))
 	if err != nil {
@@ -424,6 +449,81 @@ func (a *admin) ViewMessage(offsetMsgId string) (*primitive.MessageExt, error) {
 		}
 	}
 	return nil, err
+}
+
+func (a *admin) QueryMessageByUniqKey(topic, uniqKey string) (*primitive.MessageExt, error) {
+	msgs, err := a.queryMessage(context.Background(), topic, uniqKey, defaultQueryMessageMaxNum, queryMessageMinTimestamp, queryMessageMaxTimestamp)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, msg := range msgs {
+		if msg.GetProperty(primitive.PropertyUniqueClientMessageIdKeyIndex) == uniqKey {
+			return msg, nil
+		}
+	}
+
+	return nil, fmt.Errorf("query message by uniq key no message, topic: %s, uniqKey: %s", topic, uniqKey)
+}
+
+func (a *admin) queryMessage(ctx context.Context, topic, key string, maxNum int, beginTimestamp, endTimestamp int64) ([]*primitive.MessageExt, error) {
+	topic = utils.WrapNamespace(a.opts.Namespace, topic)
+	routeData, err := a.cli.GetNameSrv().QueryTopicRouteInfo(topic)
+	if err != nil {
+		return nil, err
+	}
+	if routeData == nil || len(routeData.BrokerDataList) == 0 {
+		return nil, fmt.Errorf("query message no broker route, topic: %s", topic)
+	}
+
+	msgs := make([]*primitive.MessageExt, 0)
+	var lastErr error
+	queriedBrokerAddrs := make(map[string]struct{}, len(routeData.BrokerDataList))
+
+	for _, brokerData := range routeData.BrokerDataList {
+		if brokerData == nil || len(brokerData.BrokerAddresses) == 0 {
+			continue
+		}
+		brokerAddr := brokerData.SelectBrokerAddr()
+		if brokerAddr == "" {
+			continue
+		}
+		if _, ok := queriedBrokerAddrs[brokerAddr]; ok {
+			continue
+		}
+		queriedBrokerAddrs[brokerAddr] = struct{}{}
+
+		request := &internal.QueryMessageRequestHeader{
+			Topic:          topic,
+			Key:            key,
+			MaxNum:         maxNum,
+			BeginTimestamp: beginTimestamp,
+			EndTimestamp:   endTimestamp,
+		}
+		cmd := remote.NewRemotingCommand(internal.ReqQueryMessage, request, nil)
+		res, err := a.cli.InvokeSync(ctx, brokerAddr, cmd, 5*time.Second)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		switch res.Code {
+		case internal.ResSuccess:
+			msgs = append(msgs, primitive.DecodeMessage(res.Body)...)
+		case internal.ResQueryNotFound:
+			continue
+		default:
+			lastErr = fmt.Errorf("query message error: CODE:%d, Remark:%s", res.Code, res.Remark)
+		}
+	}
+
+	if len(msgs) > 0 {
+		return msgs, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("query message by key no message, topic: %s, key: %s", topic, key)
 }
 
 func (a *admin) GetBrokerConfig(addr string) (map[string]string, error) {

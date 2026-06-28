@@ -52,6 +52,7 @@ const (
 	ReqGetTopicStatsInfo             = int16(202)
 	ReqGetConsumerConnectionList     = int16(203)
 	ReqGetAllTopicListFromNameServer = int16(206)
+	ReqDeleteSubscriptionGroup       = int16(207)
 	ReqGetConsumerStats              = int16(208)
 	ReqDeleteTopicInBroker           = int16(215)
 	ReqDeleteTopicInNameSrv          = int16(216)
@@ -699,5 +700,17 @@ func (request *GetConsumerRunningInfoRequestHeader) Encode() map[string]string {
 		"consumerGroup": request.ConsumerGroup,
 		"clientId":      request.ClientId,
 		"jstackEnable":  strconv.FormatBool(request.JstackEnable),
+	}
+}
+
+type DeleteSubscriptionGroupRequestHeader struct {
+	GroupName   string
+	CleanOffset bool
+}
+
+func (request *DeleteSubscriptionGroupRequestHeader) Encode() map[string]string {
+	return map[string]string{
+		"groupName":   request.GroupName,
+		"cleanOffset": strconv.FormatBool(request.CleanOffset),
 	}
 }
