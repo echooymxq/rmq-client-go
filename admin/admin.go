@@ -654,8 +654,27 @@ func (a *admin) ExamineTopicStats(topic string) (*TopicStatsTable, error) {
 }
 
 func (a *admin) ExamineTopicConsumeStats(group, topic string) (*ConsumeStats, error) {
-	retryTopic := internal.GetRetryTopic(group)
-	topicRouteData, err := a.ExamineTopicRouteInfo(context.Background(), retryTopic)
+	routeTopics := []string{internal.GetRetryTopic(group)}
+	if topic != "" {
+		routeTopics = append(routeTopics, topic, internal.GetPopRetryTopic(topic, group))
+	}
+
+	var (
+		topicRouteData *internal.TopicRouteData
+		err            error
+	)
+	for i, routeTopic := range routeTopics {
+		topicRouteData, err = a.ExamineTopicRouteInfo(context.Background(), routeTopic)
+		if err == nil && topicRouteData != nil {
+			break
+		}
+		if i == len(routeTopics)-1 {
+			return nil, err
+		}
+	}
+	if topicRouteData == nil {
+		return nil, fmt.Errorf("topic route data not found for consumer group %s", group)
+	}
 
 	request := &internal.GetConsumeStatsRequestHeader{
 		ConsumerGroup: group,
@@ -663,20 +682,38 @@ func (a *admin) ExamineTopicConsumeStats(group, topic string) (*ConsumeStats, er
 	}
 	cmd := remote.NewRemotingCommand(internal.ReqGetConsumerStats, request, nil)
 
-	for _, brokerData := range topicRouteData.BrokerDataList {
-		addr := brokerData.BrokerAddresses[internal.MasterId]
-		res, err := a.cli.InvokeSync(context.Background(), addr, cmd, 5*time.Second)
-		if err == nil {
-			if res.Code == internal.ResSuccess {
-				var consumeStats ConsumeStats
-				err := consumeStats.Decode(string(res.Body))
-				return &consumeStats, err
-			} else {
-				err = fmt.Errorf("get consumer stats error: CODE:%d, Remark:%s", res.Code, res.Remark)
-			}
-		}
+	result := &ConsumeStats{
+		OffsetTable: make(map[primitive.MessageQueue]OffsetWrapper),
 	}
-	return nil, err
+	for _, brokerData := range topicRouteData.BrokerDataList {
+		addr := brokerData.SelectBrokerAddr()
+		if addr == "" {
+			continue
+		}
+
+		res, err := a.cli.InvokeSync(context.Background(), addr, cmd, 5*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		if res.Code != internal.ResSuccess {
+			return nil, fmt.Errorf("get consumer stats error: CODE:%d, Remark:%s", res.Code, res.Remark)
+		}
+
+		var consumeStats ConsumeStats
+		if err := consumeStats.Decode(string(res.Body)); err != nil {
+			return nil, err
+		}
+		for mq, offset := range consumeStats.OffsetTable {
+			result.OffsetTable[mq] = offset
+		}
+		result.ConsumeTps += consumeStats.ConsumeTps
+		result.ConsumeByteRate += consumeStats.ConsumeByteRate
+	}
+
+	if len(result.OffsetTable) == 0 {
+		return nil, fmt.Errorf("not found the consumer group consume stats, because return offset table is empty, maybe the consumer not consume any message")
+	}
+	return result, nil
 }
 
 func (a *admin) ExamineConsumerConnectionInfo(group string) (*ConsumerConnection, error) {

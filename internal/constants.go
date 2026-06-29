@@ -21,6 +21,7 @@ import "strings"
 
 const (
 	RetryGroupTopicPrefix    = "%RETRY%"
+	PopRetrySeparatorV1      = "_"
 	DefaultConsumerGroup     = "DEFAULT_CONSUMER"
 	ClientInnerProducerGroup = "CLIENT_INNER_PRODUCER"
 	SystemTopicPrefix        = "rmq_sys_"
@@ -37,4 +38,8 @@ func GetRetryTopic(group string) string {
 		return group
 	}
 	return RetryGroupTopicPrefix + group
+}
+
+func GetPopRetryTopic(topic, group string) string {
+	return GetRetryTopic(group) + PopRetrySeparatorV1 + topic
 }
