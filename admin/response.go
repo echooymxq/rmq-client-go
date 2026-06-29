@@ -164,6 +164,10 @@ func (topicStatsTable *TopicStatsTable) Decode(data string) error {
 
 	offsetTable := make(map[primitive.MessageQueue]TopicOffset)
 
+	if len(offsetTableStr) < 3 {
+		topicStatsTable.OffsetTable = offsetTable
+		return nil
+	}
 	trimStr := offsetTableStr[2 : len(offsetTableStr)-1]
 
 	split := strings.Split(trimStr, ",{")
@@ -208,6 +212,10 @@ func (consumeStats *ConsumeStats) Decode(data string) error {
 
 	offsetTable := make(map[primitive.MessageQueue]OffsetWrapper)
 
+	if len(offsetTableStr) < 3 {
+		consumeStats.OffsetTable = offsetTable
+		return nil
+	}
 	trimStr := offsetTableStr[2 : len(offsetTableStr)-1]
 
 	split := strings.Split(trimStr, ",{")
@@ -261,6 +269,10 @@ func (consumerRunningInfo *ConsumerRunningInfo) Decode(data string) error {
 	res := gjson.Parse(data)
 
 	mqTableStr := res.Get("mqTable").String()
+	if len(mqTableStr) < 3 {
+		consumerRunningInfo.MQTable = mqTable
+		return nil
+	}
 	trimStr := mqTableStr[2 : len(mqTableStr)-1]
 
 	split := strings.Split(trimStr, ",{")
