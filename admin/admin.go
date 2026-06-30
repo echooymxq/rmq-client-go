@@ -140,6 +140,10 @@ func NewAdmin(opts ...AdminOption) (*admin, error) {
 		return nil, fmt.Errorf("GetOrNewRocketMQClient faild")
 	}
 	defaultOpts.Namesrv = cli.GetNameSrv()
+
+	if !defaultOpts.Credentials.IsEmpty() {
+		cli.RegisterACL()
+	}
 	//log.Printf("Client: %#v", namesrv.srvs)
 	return &admin{
 		cli:  cli,
@@ -149,7 +153,6 @@ func NewAdmin(opts ...AdminOption) (*admin, error) {
 
 func (a *admin) GetAllSubscriptionGroup(ctx context.Context, brokerAddr string, timeoutMillis time.Duration) (*SubscriptionGroupWrapper, error) {
 	cmd := remote.NewRemotingCommand(internal.ReqGetAllSubscriptionGroupConfig, nil, nil)
-	a.cli.RegisterACL()
 	response, err := a.cli.InvokeSync(ctx, brokerAddr, cmd, timeoutMillis)
 	if err != nil {
 		rlog.Error("Get all group list error", map[string]interface{}{
