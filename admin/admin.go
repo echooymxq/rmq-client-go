@@ -679,12 +679,6 @@ func (a *admin) ExamineTopicConsumeStats(group, topic string) (*ConsumeStats, er
 		return nil, fmt.Errorf("topic route data not found for consumer group %s", group)
 	}
 
-	request := &internal.GetConsumeStatsRequestHeader{
-		ConsumerGroup: group,
-		Topic:         topic,
-	}
-	cmd := remote.NewRemotingCommand(internal.ReqGetConsumerStats, request, nil)
-
 	result := &ConsumeStats{
 		OffsetTable: make(map[primitive.MessageQueue]OffsetWrapper),
 	}
@@ -693,6 +687,12 @@ func (a *admin) ExamineTopicConsumeStats(group, topic string) (*ConsumeStats, er
 		if addr == "" {
 			continue
 		}
+
+		request := &internal.GetConsumeStatsRequestHeader{
+			ConsumerGroup: group,
+			Topic:         topic,
+		}
+		cmd := remote.NewRemotingCommand(internal.ReqGetConsumerStats, request, nil)
 
 		res, err := a.cli.InvokeSync(context.Background(), addr, cmd, 5*time.Second)
 		if err != nil {
@@ -757,16 +757,16 @@ func (a *admin) GetConsumerRunningInfo(group, clientId string, jstack bool) (*Co
 	println(retryTopic)
 	topicRouteData, err := a.ExamineTopicRouteInfo(context.Background(), retryTopic)
 
-	request := &internal.GetConsumerRunningInfoRequestHeader{
-		ConsumerGroup: group,
-		ClientId:      clientId,
-		JstackEnable:  jstack,
-	}
-	cmd := remote.NewRemotingCommand(internal.ReqGetConsumerRunningInfo, request, nil)
-
 	for _, brokerData := range topicRouteData.BrokerDataList {
 		addr := brokerData.BrokerAddresses[internal.MasterId]
-		println(addr)
+
+		request := &internal.GetConsumerRunningInfoRequestHeader{
+			ConsumerGroup: group,
+			ClientId:      clientId,
+			JstackEnable:  jstack,
+		}
+		cmd := remote.NewRemotingCommand(internal.ReqGetConsumerRunningInfo, request, nil)
+
 		res, err := a.cli.InvokeSync(context.Background(), addr, cmd, 5*time.Second)
 		if err == nil {
 			if res.Code == internal.ResSuccess {
