@@ -51,7 +51,7 @@ type Admin interface {
 	CreateSubscriptionGroup(ctx context.Context, opts ...OptionSubscriptionCreate) error
 	DeleteSubscriptionGroup(ctx context.Context, brokerAddr, group string, cleanOffset bool) error
 	ViewMessage(offsetMsgId string) (*primitive.MessageExt, error)
-	QueryMessageByUniqKey(topic, uniqKey string) (*primitive.MessageExt, error)
+	QueryMessage(topic, key string, isUniqKey bool) ([]*primitive.MessageExt, error)
 	GetBrokerConfig(addr string) (map[string]string, error)
 	UpdateBrokerConfig(addr, configKey, configValue string) error
 	GetNamesrvConfig(addr string) (map[string]string, error)
@@ -454,22 +454,11 @@ func (a *admin) ViewMessage(offsetMsgId string) (*primitive.MessageExt, error) {
 	return nil, err
 }
 
-func (a *admin) QueryMessageByUniqKey(topic, uniqKey string) (*primitive.MessageExt, error) {
-	msgs, err := a.queryMessage(context.Background(), topic, uniqKey, defaultQueryMessageMaxNum, queryMessageMinTimestamp, queryMessageMaxTimestamp)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, msg := range msgs {
-		if msg.GetProperty(primitive.PropertyUniqueClientMessageIdKeyIndex) == uniqKey {
-			return msg, nil
-		}
-	}
-
-	return nil, fmt.Errorf("query message by uniq key no message, topic: %s, uniqKey: %s", topic, uniqKey)
+func (a *admin) QueryMessage(topic, uniqKey string, isUniqKey bool) ([]*primitive.MessageExt, error) {
+	return a.queryMessage(context.Background(), topic, uniqKey, defaultQueryMessageMaxNum, queryMessageMinTimestamp, queryMessageMaxTimestamp, isUniqKey)
 }
 
-func (a *admin) queryMessage(ctx context.Context, topic, key string, maxNum int, beginTimestamp, endTimestamp int64) ([]*primitive.MessageExt, error) {
+func (a *admin) queryMessage(ctx context.Context, topic, key string, maxNum int, beginTimestamp, endTimestamp int64, isUniqKey bool) ([]*primitive.MessageExt, error) {
 	topic = utils.WrapNamespace(a.opts.Namespace, topic)
 	routeData, err := a.cli.GetNameSrv().QueryTopicRouteInfo(topic)
 	if err != nil {
@@ -514,11 +503,14 @@ func (a *admin) queryMessage(ctx context.Context, topic, key string, maxNum int,
 		case internal.ResSuccess:
 			brokerMsgs := primitive.DecodeMessage(res.Body)
 			for _, msg := range brokerMsgs {
+				if isUniqKey && msg.GetProperty(primitive.PropertyUniqueClientMessageIdKeyIndex) != key {
+					continue
+				}
 				if msg.Queue != nil {
 					msg.Queue.BrokerName = brokerData.BrokerName
 				}
+				msgs = append(msgs, msg)
 			}
-			msgs = append(msgs, brokerMsgs...)
 		case internal.ResQueryNotFound:
 			continue
 		default:
